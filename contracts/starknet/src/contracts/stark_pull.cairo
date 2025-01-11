@@ -1,20 +1,5 @@
 
 
-// NOTE
-// - decide on either to use the one click migration and deposit on l2.
-          // cons - funds might be stuck for 5 days.
-
-// OR 
-
-// - use two steps, 
-      // first bridge token and then
-      // - user calls another function in l2, to deposit.
-      // cons - not one click migration.
-
-
-
-
-
 #[starknet::contract]
 mod StarkPull {
     use starkpull::utils::errors::Errors;
@@ -48,8 +33,16 @@ mod StarkPull {
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
     impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
 
-
     use integer::BoundedU256;
+
+    struct Request {
+        id: u128,
+        token: ContractAddress,
+        amount: felt252,
+        l2_fund_owner: ContractAddress,
+        status: Enum (Pending, Successful, Refunded), // default is Pending
+        calls: Array<Call>,
+    }
 
     #[storage]
     struct Storage {
@@ -63,19 +56,11 @@ mod StarkPull {
         accesscontrol: AccessControlComponent::Storage,
         #[substorage(v0)]
         upgradeable: UpgradeableComponent::Storage,
-        admin: ContractAddress,
+        
+        // todo add src/components/common.cairo component as well
+        // it has logic to hanle ownership, pausing, and upgrading
 
-
-        l2_fund_owner_id: LegacyMap<ContractAddress, felt252>,
-        amount: LegacyMap<felt252, felt252>,
-        entry_point: LegacyMap<felt252, felt252>,
-        dapp: LegacyMap<felt252, felt252>,
-        isSpend: LegacyMap<felt252, bool>,
-
-        // to be updated by the admin,
-        // address of the 3rd party contracts
-        dapp_address: LegacyMap<felt252, ContractAddress>,
-
+        requests: Map<u128, Request>,
     }
 
     #[derive(Drop, Serde)]
@@ -93,6 +78,11 @@ mod StarkPull {
         AccessControlEvent: AccessControlComponent::Event,
         SRC5Event: SRC5Component::Event,
         UpgradeableEvent: UpgradeableComponent::Event,
+
+        // todo
+        // Received (request: Request);
+        // Executed (request: Request);
+        // Refunded (request: Request);
     }
 
 
@@ -109,126 +99,32 @@ mod StarkPull {
     #[abi(embed_v0)]
     impl StarkPullImpl of IStarkPull<ContractState> {
 
-
-
-        // TOBE ignored
-        // fn spend(ref self: ContractState, entry_point: felt252, dapp: felt252, calldata: Array<ContractAddress>,) {
-        //     // TODO, improve the id assignment
-        //     let id : felt252 = self.l2_fund_owner_id.read(get_caller_address());
-        //     assert(self.isSpend.read(id) == true, 'already spend');
-
-        //     let dapp_address: ContractAddress = self.dapp_address.read(dapp);
+        fn execute(id) {
+            // assert request is in pending state
             
-        //     // conditions based on entry point
-        //     if(entry_point == strkDeposit) { // strkDeposit -> eg function for depositing in one of the strkFarm pool
-
-        //         //handle the calldata and call deposit
-        //     }
-
-        //     // conditions based on entry point
-        //     if(entry_point == zkLendDeposit) { // strkDeposit -> eg function for depositing in one of the strkFarm pool
-
-        //         //handle the calldata and call deposit
-        //     }
-
-        //     // TODO
-        //     // Transfer LP tokens to the caller.
-
-
-        //     self.isSpend.write(id, true);
-        // }
-
-
-
-        fn upgrade(ref self: ContractState, new_class_hash: ClassHash) {
-            self.accesscontrol.assert_only_role('DEFAULT_ADMIN_ROLE');
-            self.upgradeable._upgrade(new_class_hash);
+            // - execute calls (Check argent account execute code to understand how calls are executed)
+            // - Post execution, the balance change of the token should be equal to the amount (to ensure funds are actually spent)
+            // - update request status to Successful
+            // Emit event Executed
         }
 
+        fn refund(id, receiver) {
+            // assert request is in pending state
+            // assert caller is the l2_fund_owner
 
-        // TODO
-        fn update_admin(ref self: ContractState, new_admin: ContractAddress) {
-            // self.accesscontrol.assert_only_role('DEFAULT_ADMIN_ROLE');
-            // assert(!new_admin.is_zero(), Errors::ZERO_ADDRESS);
-            // let old_admin: ContractAddress = self.get_admin();
-            // self.accesscontrol._grant_role('DEFAULT_ADMIN_ROLE', new_admin);
-            // self._set_admin(new_admin);
-            // self.accesscontrol._revoke_role('DEFAULT_ADMIN_ROLE', old_admin);
+            // - refund the amount to the receiver
+            // - update request status to Refunded
+            // Emit event Refunded
         }
-
     }
 
     #[l1_handler]
-    fn handle_arival_strk_farm(ref self: ContractState, from_address: felt252, payload: Payload) {
-
-        // TODO _l1_handler to be implemented, returns l1 address
-        let l1_stark_pull: ContractAddress = self._l1_handler();
-
-        assert(
-            contract_address_to_felt252(l1_stark_pull) == from_address,
-            Errors::NOT_AUTHORIZED
-        );
-
-        let id: u128 = self._handle_arival(payload);
-
-        self._spend_strk_farm(entry_point, dapp, payload);
-
-        // self
-        //     .emit(
-        //         DepositFromL1 { id: payload.id, dapp: payload.dapp, l1_recipient: from_address, }
-        //     )
-    }
-
-    #[l1_handler]
-    fn handle_arival_zklend(ref self: ContractState, from_address: felt252, payload: Payload) {
-
-       
-    }
-
-
-    #[generate_trait]
-    impl StarkPull of StarkPullInternalTrait {
-
-        fn _spend_strk_farm(ref self: ContractState, entry_point: felt252, dapp: felt252, calldata: Array<ContractAddress>,) {
-
-
-
-            // TODO, improve the id assignment
-            let id : felt252 = self.l2_fund_owner_id.read(get_caller_address());
-            assert(self.isSpend.read(id) == true, 'already spend');
-
-            let dapp_address: ContractAddress = self.dapp_address.read(dapp);
-            
-
-            // deconstruct payload, and use
-            //handle the calldata and call deposit
-            
-
-            self.isSpend.write(id, true);
-        }
-
-
-        // handles the spending of bridged funds to 3rd party dapps.
-        fn _handle_arival(ref self: ContractState, payload: Payload) -> u128 {
-            
-
-            // store user data
-            self.l2_fund_owner_id.write(payload.l2_fund_owner, payload.id);
-            
-            self.amount.write(payload.id, payload.amount);
-            self.entry_point.write(payload.id, payload.entry_point);
-            self.dapp.write(payload.id, payload.dapp);
-            
-            payload.id
-
-        }
+    fn on_receive(ref self: ContractState, from_address: felt252, payload: Payload) {
+        // assert the caller is valid
+        // assert payload has valid request id, non-zero token, non-zero amount, non-zero l2_fund_owner and calls.length > 0
         
-
-        fn _erc20_camel(self: @ContractState) -> IERC20CamelDispatcher {
-            IERC20CamelDispatcher { contract_address: self.token.read() }
-        }
-
-        
+        // create a new request
+        // Emit event Received
     }
 }
 
