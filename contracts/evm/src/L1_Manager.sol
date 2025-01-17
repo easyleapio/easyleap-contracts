@@ -27,7 +27,7 @@ contract ContractMsg is AccessControlUpgradeable {
         uint256 fee_eth;
         address fee_receiver;
         address eth_address;
-        address l2_starkpull_receiver;
+        uint256 l2_starkpull_receiver;
     }
 
     struct TokenConfig {
@@ -43,7 +43,7 @@ contract ContractMsg is AccessControlUpgradeable {
     uint256 current_request_id;
     Settings settings;
 
-    const L2_SELECTOR = 480768629706071032051132431608482761444818804172389941599997570483678682398; // on_receive;
+    uint256 constant L2_SELECTOR = 480768629706071032051132431608482761444818804172389941599997570483678682398; // on_receive;
     IStarknetMessaging immutable STARKNET_CORE_CONTRACT;
 
     // 3. requests: mapping (id => Request)
@@ -60,7 +60,7 @@ contract ContractMsg is AccessControlUpgradeable {
         address _admin,
         Settings memory _settings
     ) {
-       initialize(snMessaging, _admin, _settings);
+        _initialize(snMessaging, _admin, _settings);
     }
 
     function initialize(
@@ -69,6 +69,14 @@ contract ContractMsg is AccessControlUpgradeable {
         Settings memory _settings
     ) external initializer {
         // todo assert only initizlied once
+        _initialize(snMessaging, _admin, _settings);
+    }
+
+    function _initialize(
+        address snMessaging,
+        address _admin,
+        Settings memory _settings
+    ) internal initializer {
         STARKNET_CORE_CONTRACT = IStarknetMessaging(snMessaging);
         settings = _settings;
         
@@ -110,11 +118,10 @@ contract ContractMsg is AccessControlUpgradeable {
 
     // USER calls migrate to bridge and perform requested actions.
     function push(
-        TokenConfig tokenConfig, 
+        TokenConfig memory tokenConfig, 
         uint256 amount, 
         uint256 reciever, 
-        bytes memory entry_point, 
-        bytes[] memory _calldata
+        uint256[] memory _calldata
     )
         external
         payable
@@ -123,12 +130,12 @@ contract ContractMsg is AccessControlUpgradeable {
         require(amount > 0,"Invalid amount");
         require(_calldata.length > 0,"Empty calldata");
         require(
-            tokenConfig.l2_token_address != address(0), // not checking others cause it will fail this tx anyways
+            tokenConfig.l2_token_address != 0, // not checking others cause it will fail this tx anyways
             "Invalid L2 token"
         );
 
         // collect fee
-        uint256 _fee = settings.fee;
+        uint256 _fee = settings.fee_eth;
         if (_fee > 0) {
             require(msg.value >= _fee, "Insufficient fee");
             payable(settings.fee_receiver).transfer(_fee);
@@ -138,17 +145,27 @@ contract ContractMsg is AccessControlUpgradeable {
         // increase request id
         uint256 current_id = ++current_request_id;
 
+        uint256 msg_fee = 0; // use remaining amount for paying l1 l2 msging fee
         // receive tokens from caller to transfer
-        if (ethAddress == tokenConfig.l1_token_address) {
+        if (settings.eth_address == tokenConfig.l1_token_address) {
             // ensure enough ETH is received
-            require(msg.value == _fee + amount, "Incorrect ETH amount");
+            require(msg.value > _fee + amount, "Incorrect ETH amount");
+            msg_fee = msg.value - amount - _fee;
+
+            // bridge eth
+            IStarknetTokenBridge(tokenConfig.token_bridge){ value: amount }.deposit(settings.l2_starkpull_receiver);
         } else {
             require(msg.value == _fee, "Incorrect Fee amount");
+            msg_fee = msg.value - _fee;
 
             // - transfer token from caller to this contract
             IERC20 _token = IERC20(tokenConfig.l1_token_address);
             bool success = _token.transferFrom(msg.sender, address(this), amount);
             require(success, "Transfer failed");
+
+            // bridge token
+            // todo approve tokens
+            IStarknetTokenBridge(tokenConfig.token_bridge).deposit(amount, settings.l2_starkpull_receiver);
         }
 
         /**
@@ -165,14 +182,14 @@ contract ContractMsg is AccessControlUpgradeable {
         // assert valid payload
         // these are just basic accounting checks
         // if invalid flat(Call[]) is passed, l2 execution will fail but l2 owner can collect funds anyways
-        require(_calldata[0] == current_id, "Invalid payload [1]");
+        _calldata[0] = current_id;
         require(_calldata[1] == tokenConfig.l2_token_address, "Invalid payload [2]");
         require(_calldata[2] == amount, "Invalid payload [3]");
         require(_calldata[3] != 0, "Invalid payload [4]"); // l2 receiver
         require(_calldata[4] > 0, "Invalid payload [5]"); // non-zero Starknet Call[] length required
 
         // - bridge and send msg
-        _depositAndSendMessage(token, amount, payload);
+        _sendMessage(tokenConfig, amount, _calldata, msg_fee);
 
         // - write to requests
         idToRequest[current_id] = Request({
@@ -182,7 +199,7 @@ contract ContractMsg is AccessControlUpgradeable {
         });
         
         // emit InitMigration
-        emit InitMigration(id, token, amount, msg.sender);
+        emit InitMigration(current_id, tokenConfig.l1_token_address, amount, msg.sender);
     }
 
     function refund(
@@ -200,19 +217,14 @@ contract ContractMsg is AccessControlUpgradeable {
         // emit Refund
     }
 
-    function _depositAndSendMessage(address token, uint256 amount, uint256[] memory _payload) internal {
-        // bridge funds
-        IStarknetTokenBridge(tokenBridge[token]).deposit{
-            value: amount + get_bridging_fee()
-        }(amount, l2_starkpull_receiver);
-
+    function _sendMessage(TokenConfig memory tokenConfig, uint256 amount, uint256[] memory _payload, uint256 _msg_fee) internal {
         // send the message
-        IStarknetMessaging(starknet_core_contract).sendMessageToL2{
-            value: fee
-        }(l2_starkpull_receiver, _l2Selector, _payload);
+        STARKNET_CORE_CONTRACT.sendMessageToL2{
+            value: _msg_fee
+        }(settings.l2_starkpull_receiver, L2_SELECTOR, _payload);
     }
 
-    function set_settings(Settings _settings) external
+    function set_settings(Settings memory _settings) external
         onlyRole(DEFAULT_ADMIN_ROLE) {
         settings = _settings;
     }
@@ -221,7 +233,7 @@ contract ContractMsg is AccessControlUpgradeable {
         return settings;
     }
 
-    function getCurrentRequestId() external view returns (uint256) {
+    function nextRequestId() external view returns (uint256) {
         return current_request_id + 1;
     }
 
