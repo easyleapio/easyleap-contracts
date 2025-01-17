@@ -17,77 +17,74 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 contract ContractMsg is AccessControlUpgradeable {
     // // todo: Should be Ownable, Pausable, ReentrancyGuard
 
-    IStarknetMessaging private _snMessaging;
-
     struct Request {
      address token;
      uint256 amount;
      address sender;    
     }
 
+    struct Settings {
+        uint256 fee_eth;
+        address fee_receiver;
+        address eth_address;
+        uint256 l2_starkpull_receiver;
+    }
+
+    struct TokenConfig {
+        address l1_token_address;
+        uint256 l2_token_address;
+        address token_bridge;
+    }
+    
     // address public mock;
     // bytes32 constant MANAGER_ADMIN = keccak256("MANAGER_ADMIN");
 
-    // todo Variables:
-    // 1. request id starting from 1
-    uint256 id;
-
-    // 2. settings (
-    //     fee: uint256, // absolute fee in wei (ETH)
-    //     feeReceicer: address, // address to receive fee
-    // )
-    uint256 fee;
-    // address feeReceicer;
-    address ethAddress;
-
     address admin;
+    uint256 current_request_id;
+    Settings settings;
 
-    uint256 l2_starkpull_address;
-    uint256 l2_selector;
-    address starknet_core_contract;
+    uint256 constant L2_SELECTOR = 480768629706071032051132431608482761444818804172389941599997570483678682398; // on_receive;
+    IStarknetMessaging immutable STARKNET_CORE_CONTRACT;
 
     // 3. requests: mapping (id => Request)
      mapping(uint256 => Request) public idToRequest;
 
-     mapping(address => bool) public supportedToken;
-
-     mapping(address => uint256) public correspondingToken;
-
-     mapping(address => address) public tokenBridge;
-
-
-    // // todo Events:
-    // // 1. InitMigration (id, token [indexed], amount, sender [indexed], payload)
+    // events list
     event InitMigration(uint256 id, address indexed token, uint256 amount, address  indexed sender);
-
-    // // 2. Refund (id, token [indexed], amount, sender [indexed], payload) // trigged in case of failure
     event Refund(uint256 id, address indexed token, uint256 amount, address  indexed sender);
-
     event EthReceived(uint256 amount, address);
+    event FeeReceived(address indexed sender, uint256 amount, address receiver);
 
-    event FeeReceived(address indexed sender, uint256 amount);
+    constructor(
+        address snMessaging,
+        address _admin,
+        Settings memory _settings
+    ) {
+        _initialize(snMessaging, _admin, _settings);
+    }
 
-    event DepositToStarkgateBridge(uint256 amount, uint256 l2_starkpull_address);
+    function initialize(
+        address snMessaging,
+        address _admin,
+        Settings memory _settings
+    ) external initializer {
+        // todo assert only initizlied once
+        _initialize(snMessaging, _admin, _settings);
+    }
 
-
-
-    // // /**
-    // //    @notice Constructor.
-
-    // //    @param snMessaging The address of Starknet Core contract, responsible
-    // //    or messaging.
-    // // */
-    // constructor(address snMessaging) {
-    //     _snMessaging = IStarknetMessaging(snMessaging);
-    // }
-
-    function initialize(address _admin) external initializer {
+    function _initialize(
+        address snMessaging,
+        address _admin,
+        Settings memory _settings
+    ) internal initializer {
+        STARKNET_CORE_CONTRACT = IStarknetMessaging(snMessaging);
+        settings = _settings;
+        
         zeroAddressCheck(_admin);
         _setAdmin(_admin);
         __AccessControl_init();
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
-
 
     function _setAdmin(address _admin) internal {
         admin = _admin;
@@ -119,92 +116,90 @@ contract ContractMsg is AccessControlUpgradeable {
         }
     }
 
-
-
     // USER calls migrate to bridge and perform requested actions.
     function push(
-        address token, uint256 amount, uint256 reciever, bytes memory entry_point, bytes[] memory _calldata
+        TokenConfig memory tokenConfig, 
+        uint256 amount, 
+        uint256 reciever, 
+        uint256[] memory _calldata
     )
         external
         payable
     {
-        // add pause check, reentrancy guard
-
-
         // asserts
         require(amount > 0,"Invalid amount");
         require(_calldata.length > 0,"Empty calldata");
-
-
-        // token must be a valid token supported by starknet bridge
         require(
-            is_token_suppported(token) == true,
-            "Token not supported"
+            tokenConfig.l2_token_address != 0, // not checking others cause it will fail this tx anyways
+            "Invalid L2 token"
         );
 
-        // get the bridging fee;
-        uint256 _fee = get_bridging_fee();
-
-
-        // - if fee is non-zero, also collect the fee from the caller and send to receiver
-
-        if (ethAddress == token) {
-            require(msg.value == _fee + amount, "Incorrect ETH amount");
-
-            // Emit an event for successful receipt
-            emit FeeReceived(msg.sender, msg.value - amount);
-        }else {
-            require(msg.value == _fee, "Incorrect Fee amount");
-
-            // Emit an event for successful receipt
-            emit FeeReceived(msg.sender, msg.value);
-
-
-            // - transfer token from caller to this contract
-            IERC20 _token = IERC20(token);
-            uint256 allowance = _token.allowance(msg.sender, address(this));
-            require(allowance >= amount, "Allowance not sufficient");
-
-            // Perform the transfer
-            bool success = _token.transferFrom(msg.sender, address(this), amount);
-            require(success, "Transfer failed");
+        // collect fee
+        uint256 _fee = settings.fee_eth;
+        if (_fee > 0) {
+            require(msg.value >= _fee, "Insufficient fee");
+            payable(settings.fee_receiver).transfer(_fee);
+            emit FeeReceived(msg.sender, _fee, settings.fee_receiver);
         }
 
-        
+        // increase request id
+        uint256 current_id = ++current_request_id;
 
-        
+        uint256 msg_fee = 0; // use remaining amount for paying l1 l2 msging fee
+        // receive tokens from caller to transfer
+        if (settings.eth_address == tokenConfig.l1_token_address) {
+            // ensure enough ETH is received
+            require(msg.value > _fee + amount, "Incorrect ETH amount");
+            msg_fee = msg.value - amount - _fee;
 
+            // bridge eth
+            IStarknetTokenBridge(tokenConfig.token_bridge){ value: amount }.deposit(settings.l2_starkpull_receiver);
+        } else {
+            require(msg.value == _fee, "Incorrect Fee amount");
+            msg_fee = msg.value - _fee;
 
-        // - create payload for L2 (id, token, amount, sender, ...payload)
-            // - note: (remember to pass token address as l2 address of the corresponding l1 token)
-            // - Does starkgate bridge have a function to get l2 address of l1 token?
+            // - transfer token from caller to this contract
+            IERC20 _token = IERC20(tokenConfig.l1_token_address);
+            bool success = _token.transferFrom(msg.sender, address(this), amount);
+            require(success, "Transfer failed");
 
-        uint256[] memory payload = new uint256[](6);
-        payload[0] = id + 1;
-        payload[1] = correspondingToken[token]; // starknet token address
-        payload[2] = amount; // amount
-        payload[3] = uint256(uint160(msg.sender)); // sender
-        payload[4] = reciever; // reciever
-        payload[5] = abi.decode(entry_point, (uint256));
-        payload[6] = uint256(keccak256(abi.encode(_calldata))); // calldata
+            // bridge token
+            // todo approve tokens
+            IStarknetTokenBridge(tokenConfig.token_bridge).deposit(amount, settings.l2_starkpull_receiver);
+        }
 
+        /**
+         * Payload structure
+         * {
+         *      request_id: felt252,
+         *      l2_token: ContractAddress,
+         *      amount: felt252,
+         *      l2_owner: ContractAddress,
+         *      calls: Call[] // Call is like a StarknetJS object
+         * }
+         */
+
+        // assert valid payload
+        // these are just basic accounting checks
+        // if invalid flat(Call[]) is passed, l2 execution will fail but l2 owner can collect funds anyways
+        _calldata[0] = current_id;
+        require(_calldata[1] == tokenConfig.l2_token_address, "Invalid payload [2]");
+        require(_calldata[2] == amount, "Invalid payload [3]");
+        require(_calldata[3] != 0, "Invalid payload [4]"); // l2 receiver
+        require(_calldata[4] > 0, "Invalid payload [5]"); // non-zero Starknet Call[] length required
 
         // - bridge and send msg
-        _depositAndSendMessage(token, amount, payload);
+        _sendMessage(tokenConfig, amount, _calldata, msg_fee);
 
         // - write to requests
-        idToRequest[id] = Request({
-            token: token,
+        idToRequest[current_id] = Request({
+            token: tokenConfig.l1_token_address,
             amount: amount,
             sender: msg.sender
         });
         
-        // - increase request id
-        id++;
-
         // emit InitMigration
-        emit InitMigration(id, token, amount, msg.sender);
-        // close reentrancy guard
+        emit InitMigration(current_id, tokenConfig.l1_token_address, amount, msg.sender);
     }
 
     function refund(
@@ -213,7 +208,6 @@ contract ContractMsg is AccessControlUpgradeable {
     )
         external
     {
-        // add pause check, reentrancy guard
         // asserts
         // id must be valid
         // caller must be the sender of the request
@@ -221,83 +215,31 @@ contract ContractMsg is AccessControlUpgradeable {
 
         // transfer token from this contract to receiver
         // emit Refund
-        // close reentrancy guard
     }
 
-
-
-    function _depositTokenToBridge(address token, uint256 amount) internal {
-        IStarknetTokenBridge(tokenBridge[token]).deposit{
-            value: amount + get_bridging_fee()
-        }(amount, l2_starkpull_address);
-        emit DepositToStarkgateBridge(amount, l2_starkpull_address);
+    function _sendMessage(TokenConfig memory tokenConfig, uint256 amount, uint256[] memory _payload, uint256 _msg_fee) internal {
+        // send the message
+        STARKNET_CORE_CONTRACT.sendMessageToL2{
+            value: _msg_fee
+        }(settings.l2_starkpull_receiver, L2_SELECTOR, _payload);
     }
 
-
-    function _sendMessage(uint256[] memory _payload, uint256 _l2Selector) internal {
-        IStarknetMessaging(starknet_core_contract).sendMessageToL2{
-            value: fee
-        }(l2_starkpull_address, _l2Selector, _payload);
-    }
-
-    function _depositAndSendMessage(address token, uint256 amount, uint256[] memory _payload) internal {
-        _depositTokenToBridge(token, amount);
-        _sendMessage(_payload, l2_selector);
-    }
-
-
-
-    function is_token_suppported(address _token) public view returns (bool) {
-        bool _is_token_suppported = supportedToken[_token];
-        return _is_token_suppported;  
-    }
-
-
-    function set_token_suppport(address _token) external
+    function set_settings(Settings memory _settings) external
         onlyRole(DEFAULT_ADMIN_ROLE) {
-        supportedToken[_token] = true;
+        settings = _settings;
     }
 
-    function set_bridging_fee(uint256 _fee) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        fee = _fee;
+    function getSettings() external view returns (Settings memory) {
+        return settings;
     }
 
-    function set_l2_starkpull_address(uint256 _l2_starkpull_address) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        l2_starkpull_address = _l2_starkpull_address;
+    function nextRequestId() external view returns (uint256) {
+        return current_request_id + 1;
     }
 
-    function set_l2_selector(uint256 _l2_selector) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        l2_selector = _l2_selector;
+    function getRequest(uint256 id) external view returns (Request memory) {
+        return idToRequest[id];
     }
-
-    function set_starknet_core_contract(address _starknet_core_contract) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        starknet_core_contract = _starknet_core_contract;
-    }
-
-    function get_bridging_fee() public view returns (uint256) {
-        return fee;  
-    }
-
-    function set_eth_address(address _ethAddress) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        ethAddress = _ethAddress;
-    }
-
-    function set_correspondingToken(address token, uint256 corToken) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        correspondingToken[token] = corToken;
-    }
-
-    function set_token_bridge_address(address token, address _token_bridge) external
-        onlyRole(DEFAULT_ADMIN_ROLE) {
-        tokenBridge[token] = _token_bridge;
-    }
-
-
 
     function zeroAddressCheck(address _address) internal pure {
         if (!_assembly_notZero(_address)) {
@@ -317,7 +259,4 @@ contract ContractMsg is AccessControlUpgradeable {
     }
 
     error ZeroAddress();
-
-
-
 }
