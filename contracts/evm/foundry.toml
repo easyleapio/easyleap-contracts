@@ -1,0 +1,13 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib", "dependencies"]
+
+remappings = [
+    "@openzeppelin/=node_modules/@openzeppelin",
+    "@balancer-labs/=node_modules/@balancer-labs",
+    "@uniswap/=node_modules/@uniswap"
+]
+fs_permissions = [{ access = "read", path = "./out"}]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
