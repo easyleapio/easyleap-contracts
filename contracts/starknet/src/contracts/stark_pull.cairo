@@ -21,16 +21,20 @@ mod StarkPull {
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
     impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
 
+
+    // #[derive(Serde, Drop, Copy, starknet::Store)]
+    #[starknet::storage_node]
     struct Request {
         id: felt252,
         token: ContractAddress,
-        amount: felt252,
+        amount: u256,
         l2_fund_owner: ContractAddress,
         // status: Enum (Pending, Successful, Refunded), // default is Pending  
         status : felt252, // 1: pending, 2: successful, 3: Refunded /* replace with enum */
         // calls: Array<Call>,
         entry_point: felt252,
-        calldata: Array<felt252>
+        calldata_len: felt252,
+        calldata: Map<felt252, felt252>, // <calldata_len, calldata[i]>
     }
 
     #[derive(Drop, Serde)]
@@ -60,9 +64,9 @@ mod StarkPull {
 
         l1_starkpull_manager: ContractAddress,
 
-        requests: LegacyMap<felt252, Request>,
+        requests: Map<felt252, Request>,
 
-        dapp_adderess: LegacyMap<felt252, ContractAddress>,
+        dapp_adderess: Map<felt252, ContractAddress>,
 
 
     }
@@ -87,46 +91,51 @@ mod StarkPull {
     impl StarkPullImpl of IStarkPull<ContractState> {
         fn execute(ref self: ContractState, id: felt252) {
             // assert request is in pending state
-            assert(self.requests.read(id).status == 1, 'Not in Pending');
+            let mut request = self.requests.entry(id);
+            assert(request.status.read() == 1, 'Not in Pending');
 
 
-            let dapp_adderess: ContractAddress = self.dapp_adderess.read(self.requests.read(id).entry_point);
+            let dapp_adderess: ContractAddress = self.dapp_adderess.read(request.entry_point.read());
             
             // - execute calls (Check argent account execute code to understand how calls are executed)
 
-            let prevBalance: u256 = IERC20Dispatcher { contract_address: self.requests.read(id).token }
+            let prevBalance: u256 = IERC20Dispatcher { contract_address: request.token.read() }
                 .balance_of(get_contract_address());
             
+            let amount_u256: u256 = request.amount.read();
+            IERC20Dispatcher { contract_address: request.token.read() }
+                .approve(dapp_adderess, amount_u256);
 
-            IERC20Dispatcher { contract_address: self.requests.read(id).token }
-                .approve(self.cl_vault.read(), self.requests.read(id).amount);
+
+            // let x  = request.calldata.entry(0).read();
+
+            let mut calldata:Array<felt252> = ArrayTrait::new();
+
+            let mut x: felt252 = 0;
+            loop {
+                if x == request.calldata_len.read() {
+                    break;
+                } else {
+                    calldata.append( request.calldata.entry(x.try_into().unwrap()).read() );
+                }
+            };
+
 
             let mut res = starknet::call_contract_syscall(
                 address: dapp_adderess,
-                entry_point_selector: self.requests.read(id).entry_point,
-                calldata: self.requests.read(id).calldata,
+                entry_point_selector: request.entry_point.read(),
+                calldata: calldata.span(),
             );
 
-            let currentBalance: u256 = IERC20Dispatcher { contract_address: self.requests.read(id).token }
+            let currentBalance: u256 = IERC20Dispatcher { contract_address: request.token.read() }
                 .balance_of(get_contract_address());
 
-            // - Post execution, the balance change of the token should be equal to the amount (to ensure funds are actually spent)
-            assert(currentBalance == prevBalance - self.requests.read(id).amount, 'spend error');
+            // // - Post execution, the balance change of the token should be equal to the amount (to ensure funds are actually spent)
+            assert(currentBalance == prevBalance - request.amount.read(), 'spend error');
 
             // - update request status to Successful
 
-            self.requests.write(
-                id,
-                Request {
-                            id: id,
-                            token: token,
-                            amount: amount,
-                            l2_fund_owner: l2_owner,
-                            status : 2, //2: successful, /* replace with enum */
-                            entry_point: entry_point,
-                            calldata: calldata
-                        }
-            );
+            request.status.write(2);
 
 
             // Emit event Executed
@@ -134,31 +143,20 @@ mod StarkPull {
 
         fn refund(ref self: ContractState, id: felt252, receiver: ContractAddress){
             // assert request is in pending state
-            assert(self.requests.read(id).status == 1, 'Not in Pending');
+            let mut request = self.requests.entry(id);
+            assert(request.status.read() == 1, 'Not in Pending');
 
             // assert caller is the l2_fund_owner
-            assert(self.requests.read(id).l2_fund_owner == get_caller_address(), 'Not the owner');
+            assert(request.l2_fund_owner.read() == get_caller_address(), 'Not the owner');
 
             // - refund the amount to the receiver
-            IERC20Dispatcher { contract_address: self.requests.read(id).token }
-                .transfer(self.requests.read(id).l2_fund_owner, self.requests.read(id).amount);
+            IERC20Dispatcher { contract_address: request.token.read() }
+                .transfer(request.l2_fund_owner.read(), request.amount.read());
 
             // - update request status to Refunded
-
-            self.requests.write(
-                id,
-                Request {
-                            id: id,
-                            token: token,
-                            amount: amount,
-                            l2_fund_owner: l2_owner,
-                            status : 3,  // 3: Refunded /* replace with enum */
-                            entry_point: entry_point,
-                            calldata: calldata
-                        }
-            );
+            request.status.write(3);  // 3: Refunded /* replace with enum */
             
-            // Emit event Refunded
+        //     // Emit event Refunded
         }
 
     }
@@ -198,20 +196,24 @@ mod StarkPull {
         
         // create a new request
 
-        self.requests.write(
-            id,
-            Request {
-                        id: id,
-                        token: token,
-                        amount: amount,
-                        l2_fund_owner: l2_owner,
-                        status : 1, // 1: pending, 2: successful, 3: Refunded /* replace with enum */
-                        entry_point: entry_point,
-                        calldata: calldata
-                    }
-        );
+        let mut request = self.requests.entry(id);
+        request.id.write(id);
+        request.token.write(token);
+        request.amount.write(amount);
+        request.l2_fund_owner.write(l2_owner);
+        request.status.write(1);
+        request.entry_point.write(entry_point);
 
+        request.calldata_len.write(calldata.len().try_into().unwrap());
 
+        let mut x: felt252 = 0;
+        loop {
+            if x == calldata.len().try_into().unwrap() {
+                break;
+            } else {
+                request.calldata.entry(x).write(*calldata.at( x.try_into().unwrap() ));
+            }
+        };
         
         // Emit event Received
         
