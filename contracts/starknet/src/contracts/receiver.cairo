@@ -78,6 +78,11 @@ mod StarkPull {
             // update request status as success
             // self.locked_id.write(0);
         }
+
+        fn get_request(ref self: ContractState, id: felt252) -> Request {
+            self.requests.read(id)
+        }
+
     }
 
 

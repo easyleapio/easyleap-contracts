@@ -40,6 +40,7 @@ pub trait IReceiver<TContractState> {
     // fn update_admin(ref self: TContractState, new_admin: ContractAddress);
     // fn get_admin(self: @TContractState) -> ContractAddress;
     fn refund(ref self: TContractState, id: felt252, receiver: ContractAddress);
+    fn get_request(ref self: TContractState, id: felt252) -> Request;
     fn lock(ref self: TContractState, id: felt252) -> u256;
     fn unlock(ref self: TContractState, id: felt252);
 }

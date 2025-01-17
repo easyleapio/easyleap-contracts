@@ -14,6 +14,8 @@ mod StarkPull {
     #[storage]
     struct Storage {
         receiver: ContractAddress,
+        fee_bps: felt256,
+        fee_receiver: ContractAddress,
     }
 
     #[event]
@@ -32,13 +34,15 @@ mod StarkPull {
     impl StarkPullImpl of IStarkPull<ContractState> {
         fn execute(ref self: ContractState, id: felt252) {
             // assert request is in pending state
-            let mut request = self.requests.entry(id);
+            let receiverDisp = IReceiverDispatcher { contract_address: self.receiver.read() };
+            let mut request = receiverDisp.get_request(id);
             assert(request.status.read() == 1, 'Not in Pending');
 
             // ? this will lock and prevent re-entrancy
             // ? this will also send the funds of the request to this contract
-            IReceiverDispatcher { contract_address: self.receiver.read() }
-                .lock(id);
+            receiverDisp.lock(id);
+
+            // todo deduct fee and send to fee_receiver
             
             let mut calldata_span = request.calldata.span();
             let calls: Array<Call> = Serde::<Array<Call>>::deserialize(ref calldata_span).unwrap();
@@ -54,8 +58,12 @@ mod StarkPull {
                     entry_point_selector: call.selector,
                     calldata: call.calldata,
                 );
-
                 // todo remember to unwrap and check result as shown in above github link
+
+                if (i == len - 1) {
+                    break;
+                }
+                i += 1;
             }
 
             let currentBalance: u256 = IERC20Dispatcher { contract_address: request.token.read() }
@@ -66,8 +74,7 @@ mod StarkPull {
 
             // unlocks the receive making the transaction done
             // This ensures the lock is closed on the receiver
-            IReceiverDispatcher { contract_address: self.receiver.read() }
-                .unlock(id);
+            receiverDisp.unlock(id);
 
             // Emit event Executed
         }

@@ -188,6 +188,8 @@ contract ContractMsg is AccessControlUpgradeable {
         require(_calldata[3] != 0, "Invalid payload [4]"); // l2 receiver
         require(_calldata[4] > 0, "Invalid payload [5]"); // non-zero Starknet Call[] length required
 
+        // todo should we assert a max calldata length to prevent gas limit issues?
+        
         // - bridge and send msg
         _sendMessage(tokenConfig, amount, _calldata, msg_fee);
 
