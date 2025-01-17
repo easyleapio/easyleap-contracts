@@ -1,10 +1,10 @@
 mod interfaces {
-    pub mod IStarkPull;
-    // pub mod IAutoVault;
+    pub mod IReceiver;
+    pub mod IExecutor;
 }
 
 mod contracts {
-    pub mod stark_pull;
+    pub mod receiver;
     // pub mod temp;
 }
 
