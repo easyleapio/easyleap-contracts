@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Business Source License 1.1
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.28;
 
 import "./interfaces/IStarknetMessaging.sol";
 import "./interfaces/IStarknetTokenBridge.sol";
@@ -44,7 +44,7 @@ contract ContractMsg is AccessControlUpgradeable {
     Settings settings;
 
     uint256 constant L2_SELECTOR = 480768629706071032051132431608482761444818804172389941599997570483678682398; // on_receive;
-    IStarknetMessaging immutable STARKNET_CORE_CONTRACT;
+    IStarknetMessaging STARKNET_CORE_CONTRACT;
 
     // 3. requests: mapping (id => Request)
      mapping(uint256 => Request) public idToRequest;
@@ -153,7 +153,7 @@ contract ContractMsg is AccessControlUpgradeable {
             msg_fee = msg.value - amount - _fee;
 
             // bridge eth
-            IStarknetTokenBridge(tokenConfig.token_bridge){ value: amount }.deposit(settings.l2_starkpull_receiver);
+            IStarknetTokenBridge(tokenConfig.token_bridge).deposit{ value: amount }(amount, settings.l2_starkpull_receiver);
         } else {
             require(msg.value == _fee, "Incorrect Fee amount");
             msg_fee = msg.value - _fee;
