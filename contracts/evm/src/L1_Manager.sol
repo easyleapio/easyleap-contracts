@@ -2,19 +2,31 @@
 
 pragma solidity ^0.8.28;
 
-import "./interfaces/IStarknetMessaging.sol";
-import "./interfaces/IStarknetTokenBridge.sol";
-
 import "./interfaces/IERC20.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
+interface IStarkgateTokenBridge {
+    function deposit(
+        uint256 amount,
+        uint256 l2Recipient
+    ) external payable;
+}
+
+interface IStarknetCore {
+    function sendMessageToL2(
+        uint256 toAddress,
+        uint256 selector,
+        uint256[] calldata payload
+    ) external payable returns (bytes32, uint256);
+    function l1ToL2MessageNonce() external view returns (uint256);
+}
 
 // error InvalidPayload();
 
 /**
    @title Test contract to receive / send messages to starknet.
 */
-contract ContractMsg is AccessControlUpgradeable {
+contract L1Manager is AccessControlUpgradeable {
     // // todo: Should be Ownable, Pausable, ReentrancyGuard
 
     struct Request {
@@ -26,14 +38,13 @@ contract ContractMsg is AccessControlUpgradeable {
     struct Settings {
         uint256 fee_eth;
         address fee_receiver;
-        address eth_address;
         uint256 l2_starkpull_receiver;
     }
 
     struct TokenConfig {
         address l1_token_address;
         uint256 l2_token_address;
-        address token_bridge;
+        address bridge_address;
     }
     
     // address public mock;
@@ -43,8 +54,8 @@ contract ContractMsg is AccessControlUpgradeable {
     uint256 current_request_id;
     Settings settings;
 
-    uint256 constant L2_SELECTOR = 480768629706071032051132431608482761444818804172389941599997570483678682398; // on_receive;
-    IStarknetMessaging STARKNET_CORE_CONTRACT;
+    uint256 constant L2_SELECTOR = 0x01101afb9568fc98d91b25365fb0f498486ed49680b8d2625a0b45a850311d1e; // on_receive;
+    IStarknetCore starknetCore;
 
     // 3. requests: mapping (id => Request)
      mapping(uint256 => Request) public idToRequest;
@@ -77,7 +88,7 @@ contract ContractMsg is AccessControlUpgradeable {
         address _admin,
         Settings memory _settings
     ) internal initializer {
-        STARKNET_CORE_CONTRACT = IStarknetMessaging(snMessaging);
+        starknetCore = IStarknetCore(snMessaging);
         settings = _settings;
         
         zeroAddressCheck(_admin);
@@ -120,7 +131,6 @@ contract ContractMsg is AccessControlUpgradeable {
     function push(
         TokenConfig memory tokenConfig, 
         uint256 amount, 
-        uint256 reciever, 
         uint256[] memory _calldata
     )
         external
@@ -138,35 +148,14 @@ contract ContractMsg is AccessControlUpgradeable {
         uint256 _fee = settings.fee_eth;
         if (_fee > 0) {
             require(msg.value >= _fee, "Insufficient fee");
-            payable(settings.fee_receiver).transfer(_fee);
+            uint256 balance = address(this).balance;
+            require(balance >= _fee, "Insufficient balance");
+            payable(address(settings.fee_receiver)).transfer(_fee);
             emit FeeReceived(msg.sender, _fee, settings.fee_receiver);
         }
 
         // increase request id
         uint256 current_id = ++current_request_id;
-
-        uint256 msg_fee = 0; // use remaining amount for paying l1 l2 msging fee
-        // receive tokens from caller to transfer
-        if (settings.eth_address == tokenConfig.l1_token_address) {
-            // ensure enough ETH is received
-            require(msg.value > _fee + amount, "Incorrect ETH amount");
-            msg_fee = msg.value - amount - _fee;
-
-            // bridge eth
-            IStarknetTokenBridge(tokenConfig.token_bridge).deposit{ value: amount }(amount, settings.l2_starkpull_receiver);
-        } else {
-            require(msg.value == _fee, "Incorrect Fee amount");
-            msg_fee = msg.value - _fee;
-
-            // - transfer token from caller to this contract
-            IERC20 _token = IERC20(tokenConfig.l1_token_address);
-            bool success = _token.transferFrom(msg.sender, address(this), amount);
-            require(success, "Transfer failed");
-
-            // bridge token
-            // todo approve tokens
-            IStarknetTokenBridge(tokenConfig.token_bridge).deposit(amount, settings.l2_starkpull_receiver);
-        }
 
         /**
          * Payload structure
@@ -189,9 +178,30 @@ contract ContractMsg is AccessControlUpgradeable {
         require(_calldata[4] > 0, "Invalid payload [5]"); // non-zero Starknet Call[] length required
 
         // todo should we assert a max calldata length to prevent gas limit issues?
+
+        // receive tokens from caller to transfer
+        uint256 remaining_eth_bal = address(this).balance;
+        uint256 deposit_fee = 0.00001 ether; // is hard coding ok?
+        if (tokenConfig.l1_token_address == address(0)) {
+            // ensure enough ETH is received
+            require(remaining_eth_bal > amount, "Incorrect ETH amount");
+            
+            // bridge eth
+            IStarkgateTokenBridge(tokenConfig.bridge_address).deposit{ value: amount + deposit_fee }(amount, settings.l2_starkpull_receiver);
+        } else {
+            require(remaining_eth_bal > 0, "Invalid messaging Fee amount");
+
+            // - transfer token from caller to this contract
+            IERC20 _token = IERC20(tokenConfig.l1_token_address);
+            bool success = _token.transferFrom(msg.sender, address(this), amount);
+            require(success, "Transfer failed");
+
+            // bridge token
+            _token.approve(address(tokenConfig.bridge_address), amount);
+            IStarkgateTokenBridge(tokenConfig.bridge_address).deposit{ value: deposit_fee }(amount, settings.l2_starkpull_receiver);
+        }
         
-        // - bridge and send msg
-        _sendMessage(tokenConfig, amount, _calldata, msg_fee);
+        _sendMessage(_calldata);
 
         // - write to requests
         idToRequest[current_id] = Request({
@@ -219,10 +229,12 @@ contract ContractMsg is AccessControlUpgradeable {
         // emit Refund
     }
 
-    function _sendMessage(TokenConfig memory tokenConfig, uint256 amount, uint256[] memory _payload, uint256 _msg_fee) internal {
+    function _sendMessage(uint256[] memory _payload) internal {
         // send the message
-        STARKNET_CORE_CONTRACT.sendMessageToL2{
-            value: _msg_fee
+        // use remaining amount as msg fee
+        uint256 bal = address(this).balance;
+        starknetCore.sendMessageToL2{
+            value: bal
         }(settings.l2_starkpull_receiver, L2_SELECTOR, _payload);
     }
 
