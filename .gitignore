@@ -4,3 +4,4 @@ node_modules
 dist
 .snfoundry_cache
 out
+cache
