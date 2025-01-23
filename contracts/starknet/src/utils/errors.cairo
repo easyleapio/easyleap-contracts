@@ -1,8 +1,10 @@
 pub mod Errors {
-    pub const ZERO_ADDRESS: felt252 = 'Zero address error';
-    pub const ZERO_VALUE: felt252 = 'Zero Value';
-    pub const NOT_AUTHORIZED: felt252 = 'Not authorized';
-    pub const INVALID_ASSETS: felt252 = 'Invalid assets amount';
-    pub const INVALID_SHARES: felt252 = 'Invalid shares amount';
-    pub const INSUFFICIENT_BALANCE: felt252 = 'Insufficient balance';
+    pub const NOT_PENDING: felt252 = 'NOT_PENDING';
+    pub const NOT_AUTHORIZED: felt252 = 'NOT_AUTHORIZED';
+    pub const NOT_LOCKED: felt252 = 'NOT_LOCKED';
+    pub const ALREADY_LOCKED: felt252 = 'ALREADY_LOCKED';
+    pub const INVALID_LOCK : felt252 = 'INVALID_LOCK';
+    pub const REQUEST_EXISTS: felt252 = 'REQUEST_EXISTS';
+    pub const EXECUTE_FAILED: felt252 = 'EXECUTE_FAILED';
+    pub const SPEND_ERROR: felt252 = 'SPEND_ERROR';
 }

@@ -1,3 +1,18 @@
+use starknet::{ClassHash, ContractAddress};
+
+#[starknet::interface]
+pub trait ICommon<TState> {
+    fn upgrade(ref self: TState, new_class: ClassHash);
+    fn pause(ref self: TState);
+    fn unpause(ref self: TState);
+    fn is_paused(self: @TState) -> bool;
+
+    // ownable stuff
+    fn owner(self: @TState) -> ContractAddress;
+    fn transfer_ownership(ref self: TState, new_owner: ContractAddress);
+    fn renounce_ownership(ref self: TState);
+}
+
 #[starknet::component]
 pub mod CommonComp {
     use openzeppelin::upgrades::UpgradeableComponent;
@@ -10,11 +25,8 @@ pub mod CommonComp {
         InternalTrait as PausableInternalTrait, PausableImpl
     };
     use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
-    use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent::{
-        InternalTrait as ReentrancyGuardInternalTrait,
-    };
 
-    use strkfarm::interfaces::common::ICommon;
+    use super::ICommon;
     use starknet::{ClassHash, ContractAddress};
 
     #[storage]

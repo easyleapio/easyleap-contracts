@@ -1,86 +1,160 @@
 #[starknet::contract]
-mod StarkPull {
-    use starknet::contract_address::contract_address_const;
-
+mod Receiver {
+    use starknet::event::EventEmitter;
     use starkpull::interfaces::IReceiver::IReceiver;
-    use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp};
-    use starknet::account::Call;
-
-    // use starknet::storage::{
-    //     StoragePointerReadAccess, StoragePointerWriteAccess, StoragePathEntry, Map,
-    // };
-    use starknet::storage::{Map, StoragePathEntry, StorageMapReadAccess, StorageMapWriteAccess};
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
-    component!(path: ERC20Component, storage: erc20, event: ERC20Event);
+    use starknet::{ContractAddress, get_caller_address};
+    use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use alexandria_storage::list::{List, ListTrait};
+    use starkpull::utils::errors::Errors;
+    use starknet::syscalls::{call_contract_syscall};
+
+    // common comp deps
+    use openzeppelin::upgrades::UpgradeableComponent;
+    use openzeppelin::access::ownable::OwnableComponent;
+    use openzeppelin::security::pausable::{PausableComponent};
+    use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
+    use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent::{
+        InternalImpl as ReentrancyGuardInternalImpl,
+    };
+    use starkpull::components::common::{CommonComp};
+    // ---
+
+    component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
+    component!(path: PausableComponent, storage: pausable, event: PausableEvent);
+    component!(path: ReentrancyGuardComponent, storage: renack, event: ReentrancyGuardEvent);
+    component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
+    component!(path: CommonComp, storage: common, event: CommonCompEvent);
+
+    #[abi(embed_v0)]
+    impl CommonCompImpl = CommonComp::CommonImpl<ContractState>;
+    impl CommonInternalImpl = CommonComp::InternalImpl<ContractState>;
 
     // todo add starkpull::components::common component
     use starkpull::interfaces::IReceiver::{
-        Payload, Request, Status
+        Payload, Request, Status, RequestWithCalldata, Settings
     };
+
+    #[derive(Drop, Serde, starknet::Event)]
+    pub struct ExecuteFailed {
+        pub id: felt252,
+    }
 
     #[storage]
     struct Storage {
-        l1_starkpull_manager: ContractAddress,
-        requests: Map<felt252, Request>,
+        #[substorage(v0)]
+        upgradeable: UpgradeableComponent::Storage,
+        #[substorage(v0)]
+        pausable: PausableComponent::Storage,
+        #[substorage(v0)]
+        renack: ReentrancyGuardComponent::Storage,
+        #[substorage(v0)]
+        ownable: OwnableComponent::Storage,
+        #[substorage(v0)]
+        common: CommonComp::Storage,
+
+        // common settings
+        l1_starkpull_manager: felt252,
         executor: ContractAddress,
-        // if executor requests funds for a request id, lock state to prevent re-entrancy
+
+        // - if executor requests funds for a request id, lock state to prevent re-entrancy
         locked_id: felt252, // the ID of the request that is locked
+
+        // request settings
+        requests: Map<felt252, Request>,
+        requests_calldata_map: Map<felt252, List<felt252>>,
     }
+
 
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
         #[flat]
-        ERC20Event: ERC20Component::Event,
+        UpgradeableEvent: UpgradeableComponent::Event,
+        #[flat]
+        PausableEvent: PausableComponent::Event,
+        #[flat]
+        ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
+        #[flat]
+        OwnableEvent: OwnableComponent::Event,
+        #[flat]
+        CommonCompEvent: CommonComp::Event,
+
+        RequestWithCalldata: RequestWithCalldata,
+        Request: Request,
+        ExecuteFailed: ExecuteFailed,
     }
 
     #[constructor]
     fn constructor(
-        ref self: ContractState, _admin: ContractAddress, executor: ContractAddress
+        ref self: ContractState, _admin: ContractAddress, settings: Settings
     ) {
-
+        self.common.initializer(_admin);
+        self.l1_starkpull_manager.write(settings.l1_starkpull_manager);
+        self.executor.write(settings.executor);
     }
 
     #[abi(embed_v0)]
     impl StarkPullImpl of IReceiver<ContractState> {
-        fn refund(ref self: ContractState, id: felt252, receiver: ContractAddress){
-            // assert request is in pending state
-            let mut request = self.requests.entry(id);
-            assert(request.status.read() == 1, 'Not in Pending');
-
-            // assert caller is the l2_fund_owner
-            assert(request.l2_fund_owner.read() == get_caller_address(), 'Not the owner');
+        fn refund(ref self: ContractState, id: felt252, receiver: ContractAddress) {
+            // Validations
+            let mut request = self.requests.read(id);
+            assert(request.status == Status::Pending, Errors::NOT_PENDING);
+            assert(request.request_info.l2_owner == get_caller_address(), Errors::NOT_AUTHORIZED);
 
             // - refund the amount to the receiver
-            IERC20Dispatcher { contract_address: request.token.read() }
-                .transfer(request.l2_fund_owner.read(), request.amount.read());
+            IERC20Dispatcher { contract_address: request.request_info.token }
+                .transfer(request.request_info.l2_owner, request.request_info.amount.into());
 
             // - update request status to Refunded
-            request.status.write(3);  // 3: Refunded /* replace with enum */
-        //     // Emit event Refunded
+            request.status = Status::Refunded;
+            self.requests.write(id, request);
+            
+            // emit current request status
+            self.emit(request);
         }
 
         fn lock(ref self: ContractState, id: felt252) {
-            // assert request id is pending
-            // assert locked_id is 0
-            // assert caller is executor
-            
-            // self.locked_id.write(id);
+            // Validations
+            let mut request = self.requests.read(id);
+            assert(request.status == Status::Pending, Errors::NOT_PENDING);
+            assert(self.locked_id.read() == 0, Errors::ALREADY_LOCKED);
+            assert(self.executor.read() == get_caller_address(), Errors::NOT_AUTHORIZED);
+
+            // Lock now with the request ID
+            self.locked_id.write(id);
             // send funds of request to executor
+            IERC20Dispatcher { contract_address: request.request_info.token }
+                .transfer(self.executor.read(), request.request_info.amount.into());
         }
 
         fn unlock(ref self: ContractState, id: felt252) {
-            // assert request id is pending
-            // assert locked_id is id
-            // assert caller is executor
+            // Validations
+            let mut request = self.requests.read(id);
+            assert(request.status == Status::Pending, Errors::NOT_PENDING);
+            assert(self.locked_id.read() == id, Errors::INVALID_LOCK);
+            assert(self.executor.read() == get_caller_address(), Errors::NOT_AUTHORIZED);
+
+            // unlock
+            self.locked_id.write(0);
 
             // update request status as success
-            // self.locked_id.write(0);
+            request.status = Status::Successful;
+            self.emit(request);
         }
 
-        fn get_request(ref self: ContractState, id: felt252) -> Request {
-            self.requests.read(id)
+        fn get_request(ref self: ContractState, id: felt252) -> RequestWithCalldata {
+            RequestWithCalldata {
+                request: self.requests.read(id),
+                calldata: self.requests_calldata_map.read(id).array().unwrap(),
+            }
+        }
+
+        fn get_settings(self: @ContractState) -> Settings {
+            Settings {
+                l1_starkpull_manager: self.l1_starkpull_manager.read(),
+                executor: self.executor.read(),
+            }
         }
 
     }
@@ -88,29 +162,56 @@ mod StarkPull {
 
     #[l1_handler]
     fn on_receive(ref self: ContractState, from_address: felt252, payload: Payload) {
-
-        let caller: ContractAddress = from_address.try_into().unwrap();
-
-        let l1_starkpull_manager: ContractAddress = self.l1_starkpull_manager.read();
-
-        assert(
-            l1_starkpull_manager == caller,
-            'NOT_AUTHORIZED'
-        );
-
-        let request = Request {
-            id: payload.id,
-            token: payload.token,
-            amount: payload.amount,
-            l2_owner: payload.l2_owner,
-            status: Status::Pending,
-            calldata: payload.calldata, // todo Create List from Array using alexandria_storage::list
-        };
-
-        self.requests.write(request.id, request);
+        self._on_receive(from_address, payload);
     }
 
+    #[l1_handler]
+    fn on_receive_with_execute(ref self: ContractState, from_address: felt252, payload: Payload) {
+        let request = self._on_receive(from_address, payload);
 
+        // try to execute the request
+        let execute_calldata: Array<felt252> = array![request.request_info.id];
+        match call_contract_syscall(
+            self.executor.read(),
+            selector!("execute"),
+            execute_calldata.span()
+        ) {
+            Result::Ok(_retdata) => {
+                // ok great
+            },
+            Result::Err(_revert_reason) => {
+                // sad, may be user will request refund
+                self.emit(ExecuteFailed { id: request.request_info.id });
+            },
+        };
+
+    }
+
+    #[generate_trait]
+    pub impl InternalImpl of InternalTrait {
+        fn _on_receive(ref self: ContractState, from_address: felt252, payload: Payload) -> Request {
+            assert(
+                self.l1_starkpull_manager.read() == from_address,
+                Errors::NOT_AUTHORIZED
+            );
+    
+            let request = Request {
+                request_info: payload.request_info,
+                status: Status::Pending,
+            };
+            let existing_request = self.requests.read(request.request_info.id);
+            assert(existing_request.request_info.id == 0, Errors::REQUEST_EXISTS);
+    
+            // save request
+            self.requests.write(request.request_info.id, request);
+    
+            // save calldata
+            let mut request_calldata = self.requests_calldata_map.read(request.request_info.id);
+            request_calldata.append_span(payload.calldata.span()).unwrap();
+    
+            return request;
+        }
+    }
 }
 
 

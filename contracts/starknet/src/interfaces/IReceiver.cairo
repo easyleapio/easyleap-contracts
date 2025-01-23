@@ -1,4 +1,4 @@
-use starknet::{ContractAddress, ClassHash};
+use starknet::{ContractAddress};
 
 #[derive(Default, Drop, Copy, Serde, starknet::Store, PartialEq)]
 pub enum Status {
@@ -8,8 +8,8 @@ pub enum Status {
     Refunded,
 }
 
-#[derive(Drop, Serde, starknet::Event)]
-pub struct Payload {
+#[derive(Drop, Serde, Copy, starknet::Store, starknet::Event)]
+pub struct CommonRequest {
     pub id: felt252,
     // payload[1] = correspondingToken[token]; // starknet token address
     pub token: ContractAddress,
@@ -17,21 +17,31 @@ pub struct Payload {
     pub amount: felt252,
     // payload[4] = reciever; // reciever
     pub l2_owner: ContractAddress,
+}
+
+#[derive(Drop, Serde)]
+pub struct Payload {
+    pub request_info: CommonRequest,
     pub calldata: Array<felt252>
 }
 
 // #[derive(Serde, Drop, Copy, starknet::Store)]
 #[derive(Drop, Serde, Copy, starknet::Store, starknet::Event)]
 pub struct Request {
-    pub id: felt252,
-    // payload[1] = correspondingToken[token]; // starknet token address
-    pub token: ContractAddress,
-    // payload[2] = amount; // amount
-    pub amount: felt252,
-    // payload[4] = reciever; // reciever
-    pub l2_owner: ContractAddress,
+    pub request_info: CommonRequest,
     pub status: Status,
-    pub calldata: List<felt252> // alexandria_storage::list 
+}
+
+#[derive(Drop, Serde, starknet::Event)]
+pub struct RequestWithCalldata {
+    pub request: Request,
+    pub calldata: Array<felt252>
+}
+
+#[derive(Drop, Serde, Copy, starknet::Store)]
+pub struct Settings {
+    pub l1_starkpull_manager: felt252,
+    pub executor: ContractAddress,
 }
 
 #[starknet::interface]
@@ -40,7 +50,11 @@ pub trait IReceiver<TContractState> {
     // fn update_admin(ref self: TContractState, new_admin: ContractAddress);
     // fn get_admin(self: @TContractState) -> ContractAddress;
     fn refund(ref self: TContractState, id: felt252, receiver: ContractAddress);
-    fn get_request(ref self: TContractState, id: felt252) -> Request;
-    fn lock(ref self: TContractState, id: felt252) -> u256;
+    fn lock(ref self: TContractState, id: felt252);
     fn unlock(ref self: TContractState, id: felt252);
+
+    fn get_request(ref self: TContractState, id: felt252) -> RequestWithCalldata;
+    fn get_settings(self: @TContractState) -> Settings;
+
+    // todo set settings
 }
