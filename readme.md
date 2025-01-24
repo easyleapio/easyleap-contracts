@@ -1,5 +1,5 @@
-# Starkpull
-Starkpull is a react/nestjs library that allows any starknet DApp to add a cross-chain 1-click asset bridge and deposit feature. This allows users to deposit assets from other chains to the starknet DApp with simple UX.
+# Easyleap
+Easyleap is a react/nestjs library that allows any starknet DApp to add a cross-chain 1-click asset bridge and deposit feature. This allows users to deposit assets from other chains to the starknet DApp with simple UX.
 
 ## Features
 1. 1-click asset bridge and deposit feature
@@ -20,11 +20,11 @@ This project involves 2 components:
 1. Contracts
 2. React/NextJS frontend which is the library that can be integrated into any starknet DApp
 
-### Starkpull contracts
+### Easyleap contracts
 Below is the flow of funds assuming ETH is the target chain. The target chain contracts will have functions that can withdraw funds of users, send them to starkgate with a pre-configured receiver address that shall receive funds and deposit those funds to target DApp. The DApp can pass custom call data to handle this deposit.  
 ![Flow of funds](./assets/fund_flow.png)
 
-### Starkpull frontend
+### Easyleap frontend
 Will be added soon
 
 ## Contributors

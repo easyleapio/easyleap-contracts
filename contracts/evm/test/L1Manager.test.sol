@@ -3,8 +3,6 @@ pragma solidity ^0.8.13;
 
 import {Test, console} from "../dependencies/forge-std/src/Test.sol";
 import {L1Manager, IStarkgateTokenBridge} from "../src/L1_Manager.sol";
-import "../src/interfaces/IStarknetMessaging.sol";
-import { StarknetMessaging } from "../src/SNMessage.sol";
 import "../src/interfaces/IERC20.sol";
   
 contract L1ManagerTest is Test {
@@ -17,7 +15,7 @@ contract L1ManagerTest is Test {
       L1Manager.Settings memory settings = L1Manager.Settings({
         fee_eth: 0.001 ether,
         fee_receiver: fee_receiver,
-        l2_starkpull_receiver: 2524392021852001135582825949054576525094493216367559068627275826195272239197
+        l2_easyleap_receiver: 2524392021852001135582825949054576525094493216367559068627275826195272239197
       });
       l1Manager = new L1Manager(
         address(starknetCore),

@@ -38,7 +38,7 @@ contract L1Manager is AccessControlUpgradeable {
     struct Settings {
         uint256 fee_eth;
         address fee_receiver;
-        uint256 l2_starkpull_receiver;
+        uint256 l2_easyleap_receiver;
     }
 
     struct TokenConfig {
@@ -187,7 +187,7 @@ contract L1Manager is AccessControlUpgradeable {
             require(remaining_eth_bal > amount, "Incorrect ETH amount");
             
             // bridge eth
-            IStarkgateTokenBridge(tokenConfig.bridge_address).deposit{ value: amount + deposit_fee }(amount, settings.l2_starkpull_receiver);
+            IStarkgateTokenBridge(tokenConfig.bridge_address).deposit{ value: amount + deposit_fee }(amount, settings.l2_easyleap_receiver);
         } else {
             require(remaining_eth_bal > 0, "Invalid messaging Fee amount");
 
@@ -198,7 +198,7 @@ contract L1Manager is AccessControlUpgradeable {
 
             // bridge token
             _token.approve(address(tokenConfig.bridge_address), amount);
-            IStarkgateTokenBridge(tokenConfig.bridge_address).deposit{ value: deposit_fee }(amount, settings.l2_starkpull_receiver);
+            IStarkgateTokenBridge(tokenConfig.bridge_address).deposit{ value: deposit_fee }(amount, settings.l2_easyleap_receiver);
         }
         
         _sendMessage(_calldata);
@@ -235,7 +235,7 @@ contract L1Manager is AccessControlUpgradeable {
         uint256 bal = address(this).balance;
         starknetCore.sendMessageToL2{
             value: bal
-        }(settings.l2_starkpull_receiver, L2_SELECTOR, _payload);
+        }(settings.l2_easyleap_receiver, L2_SELECTOR, _payload);
     }
 
     function set_settings(Settings memory _settings) external
