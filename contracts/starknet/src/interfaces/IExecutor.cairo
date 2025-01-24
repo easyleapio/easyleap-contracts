@@ -1,5 +1,5 @@
 use starknet::{ContractAddress};
-use starkpull::interfaces::IReceiver::{
+use easyleap::interfaces::IReceiver::{
     IReceiverDispatcher
 };
 

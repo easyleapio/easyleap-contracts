@@ -5,16 +5,16 @@ pub mod test_integration {
         declare, ContractClassTrait, start_cheat_caller_address, stop_cheat_caller_address, L1HandlerTrait
     };
     use snforge_std::{DeclareResultTrait};
-    use starkpull::interfaces::IExecutor::{
+    use easyleap::interfaces::IExecutor::{
         Settings as ExecutorSettings, IExecutorDispatcher, IExecutorDispatcherTrait
     };
-    use starkpull::interfaces::IReceiver::{
+    use easyleap::interfaces::IReceiver::{
         IReceiverDispatcher, Settings as ReceiverSettings, IReceiverDispatcherTrait,
         Payload, Request, Status, RequestWithCalldata, CommonRequest
     };
     use openzeppelin::utils::serde::SerializedAppend;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starkpull::mocks::test_dapp::{
+    use easyleap::mocks::test_dapp::{
         ITestDappDispatcher
     };
 
@@ -36,7 +36,7 @@ pub mod test_integration {
         IExecutorDispatcher{ contract_address: addr }
     }
 
-    fn l1_starkpull_manager() -> felt252 {
+    fn l1_easyleap_manager() -> felt252 {
         100
     }
 
@@ -47,7 +47,7 @@ pub mod test_integration {
             get_contract_address().into()
         ];
         let settings = ReceiverSettings {
-            l1_starkpull_manager: l1_starkpull_manager(),
+            l1_easyleap_manager: l1_easyleap_manager(),
             executor: executor
         };
         settings.serialize(ref calldata); // settings
@@ -136,7 +136,7 @@ pub mod test_integration {
         payload.serialize(ref flat_calldata);
 
         let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive_with_execute"));
-        l1Handler.execute(l1_starkpull_manager(), flat_calldata.span()).unwrap();
+        l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
 
         let dappBalance = mockToken.balance_of(mockDapp.contract_address);
         assert(dappBalance == amount.into(), 'dapp balance incorrect');
@@ -176,7 +176,7 @@ pub mod test_integration {
         payload.serialize(ref flat_calldata);
 
         let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
-        l1Handler.execute(l1_starkpull_manager(), flat_calldata.span()).unwrap();
+        l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
         println!("Executed l1 handler");
         executor.execute(1);
     }
@@ -213,7 +213,7 @@ pub mod test_integration {
         payload.serialize(ref flat_calldata);
 
         let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
-        l1Handler.execute(l1_starkpull_manager(), flat_calldata.span()).unwrap();
+        l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
         println!("Executed l1 handler");
         executor.execute(1);
     }
@@ -263,7 +263,7 @@ pub mod test_integration {
         payload.serialize(ref flat_calldata);
 
         let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
-        l1Handler.execute(l1_starkpull_manager(), flat_calldata.span()).unwrap();
+        l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
         println!("Executed l1 handler");
         executor.execute(1);
     }

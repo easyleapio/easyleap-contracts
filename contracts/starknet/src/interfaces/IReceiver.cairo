@@ -40,7 +40,7 @@ pub struct RequestWithCalldata {
 
 #[derive(Drop, Serde, Copy, starknet::Store)]
 pub struct Settings {
-    pub l1_starkpull_manager: felt252,
+    pub l1_easyleap_manager: felt252,
     pub executor: ContractAddress,
 }
 

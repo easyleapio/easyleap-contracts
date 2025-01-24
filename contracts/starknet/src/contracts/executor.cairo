@@ -3,13 +3,13 @@ mod Executor {
     use starknet::{ContractAddress, get_contract_address};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starknet::account::Call;
-    use starkpull::interfaces::IReceiver::{
+    use easyleap::interfaces::IReceiver::{
         IReceiverDispatcher, IReceiverDispatcherTrait, Status
     };
-    use starkpull::interfaces::IExecutor::{
+    use easyleap::interfaces::IExecutor::{
         IExecutor, Settings
     };
-    use starkpull::utils::errors::Errors;
+    use easyleap::utils::errors::Errors;
     use starknet::syscalls::{call_contract_syscall};
 
     // common comp deps
@@ -20,7 +20,7 @@ mod Executor {
     use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent::{
         InternalImpl as ReentrancyGuardInternalImpl,
     };
-    use starkpull::components::common::{CommonComp};
+    use easyleap::components::common::{CommonComp};
     // ---
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
     component!(path: PausableComponent, storage: pausable, event: PausableEvent);

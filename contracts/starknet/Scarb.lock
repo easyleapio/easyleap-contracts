@@ -7,6 +7,15 @@ version = "0.3.0"
 source = "git+https://github.com/keep-starknet-strange/alexandria.git?rev=475eaf015f4e997cff8ec31a5e7b4ab3f9a86e32#475eaf015f4e997cff8ec31a5e7b4ab3f9a86e32"
 
 [[package]]
+name = "easyleap"
+version = "0.1.0"
+dependencies = [
+ "alexandria_storage",
+ "openzeppelin",
+ "snforge_std",
+]
+
+[[package]]
 name = "openzeppelin"
 version = "0.16.0"
 source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v0.16.0#ba00ce76a93dcf25c081ab2698da20690b5a1cfb"
@@ -108,13 +117,4 @@ version = "0.32.0"
 source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.32.0#3817c903b640201c72e743b9bbe70a97149828a2"
 dependencies = [
  "snforge_scarb_plugin",
-]
-
-[[package]]
-name = "starkpull"
-version = "0.1.0"
-dependencies = [
- "alexandria_storage",
- "openzeppelin",
- "snforge_std",
 ]

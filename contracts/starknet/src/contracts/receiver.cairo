@@ -1,12 +1,12 @@
 #[starknet::contract]
 mod Receiver {
     use starknet::event::EventEmitter;
-    use starkpull::interfaces::IReceiver::IReceiver;
+    use easyleap::interfaces::IReceiver::IReceiver;
     use starknet::{ContractAddress, get_caller_address};
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use alexandria_storage::list::{List, ListTrait};
-    use starkpull::utils::errors::Errors;
+    use easyleap::utils::errors::Errors;
     use starknet::syscalls::{call_contract_syscall};
 
     // common comp deps
@@ -17,7 +17,7 @@ mod Receiver {
     use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent::{
         InternalImpl as ReentrancyGuardInternalImpl,
     };
-    use starkpull::components::common::{CommonComp};
+    use easyleap::components::common::{CommonComp};
     // ---
 
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
@@ -30,8 +30,8 @@ mod Receiver {
     impl CommonCompImpl = CommonComp::CommonImpl<ContractState>;
     impl CommonInternalImpl = CommonComp::InternalImpl<ContractState>;
 
-    // todo add starkpull::components::common component
-    use starkpull::interfaces::IReceiver::{
+    // todo add easyleap::components::common component
+    use easyleap::interfaces::IReceiver::{
         Payload, Request, Status, RequestWithCalldata, Settings
     };
 
@@ -54,7 +54,7 @@ mod Receiver {
         common: CommonComp::Storage,
 
         // common settings
-        l1_starkpull_manager: felt252,
+        l1_easyleap_manager: felt252,
         executor: ContractAddress,
 
         // - if executor requests funds for a request id, lock state to prevent re-entrancy
@@ -90,7 +90,7 @@ mod Receiver {
         ref self: ContractState, _admin: ContractAddress, settings: Settings
     ) {
         self.common.initializer(_admin);
-        self.l1_starkpull_manager.write(settings.l1_starkpull_manager);
+        self.l1_easyleap_manager.write(settings.l1_easyleap_manager);
         self.executor.write(settings.executor);
     }
 
@@ -152,7 +152,7 @@ mod Receiver {
 
         fn get_settings(self: @ContractState) -> Settings {
             Settings {
-                l1_starkpull_manager: self.l1_starkpull_manager.read(),
+                l1_easyleap_manager: self.l1_easyleap_manager.read(),
                 executor: self.executor.read(),
             }
         }
@@ -191,7 +191,7 @@ mod Receiver {
     pub impl InternalImpl of InternalTrait {
         fn _on_receive(ref self: ContractState, from_address: felt252, payload: Payload) -> Request {
             assert(
-                self.l1_starkpull_manager.read() == from_address,
+                self.l1_easyleap_manager.read() == from_address,
                 Errors::NOT_AUTHORIZED
             );
     
