@@ -5,3 +5,4 @@ dist
 .snfoundry_cache
 out
 cache
+.env
