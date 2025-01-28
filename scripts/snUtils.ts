@@ -5,9 +5,9 @@ import {Account, RawArgs, RpcProvider, TransactionExecutionStatus, extractContra
 import { readFileSync, existsSync, writeFileSync } from 'fs'
 import { IConfig, Network, Store, getDefaultStoreConfig } from '@strkfarm/sdk';
 
-const ACCOUNT_NAME_SN = 'strkfarmadmin';
-export function getRpcProvider(rpcUrl: string | undefined = process.env.RPC_URL) {
-    assert(rpcUrl, 'invalid RPC_URL');
+export const ACCOUNT_NAME_SN = 'strkfarmadmin';
+export function getRpcProvider(rpcUrl: string | undefined = process.env.SN_RPC) {
+    assert(rpcUrl, 'invalid SN_RPC');
     console.log(`RPC: ${rpcUrl}`);
     return new RpcProvider({nodeUrl: rpcUrl})
 }
@@ -27,8 +27,8 @@ function saveContracts(contracts: any) {
 
 export function getAccount(accountKey: string) {
     const config: IConfig = {
-        provider: <any>new RpcProvider({nodeUrl: process.env.RPC_URL}),
-        network: Network.mainnet,
+        provider: <any>new RpcProvider({nodeUrl: process.env.SN_RPC}),
+        network: process.env.NETWORK == 'mainnet' ? Network.mainnet : Network.sepolia,
         stage: 'production'
     }
     const storeConfig = getDefaultStoreConfig(Network.mainnet);
@@ -41,14 +41,14 @@ export function getAccount(accountKey: string) {
     return store.getAccount(accountKey);
 }
 
-export async function myDeclare(contract_name: string, package_name: string = 'strkfarm') {
+export async function myDeclare(contract_name: string, package_name: string = 'easyleap') {
     const provider = getRpcProvider();
     const acc = getAccount(ACCOUNT_NAME_SN);
     const compiledSierra = json.parse(
-        readFileSync(`./target/release/${package_name}_${contract_name}.contract_class.json`).toString("ascii")
+        readFileSync(`./starknet/target/release/${package_name}_${contract_name}.contract_class.json`).toString("ascii")
     )
     const compiledCasm = json.parse(
-    readFileSync(`./target/release/${package_name}_${contract_name}.compiled_contract_class.json`).toString("ascii")
+    readFileSync(`./starknet/target/release/${package_name}_${contract_name}.compiled_contract_class.json`).toString("ascii")
     )
     
     const contracts = getContracts();

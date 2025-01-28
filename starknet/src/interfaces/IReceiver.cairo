@@ -52,8 +52,9 @@ pub trait IReceiver<TContractState> {
     fn refund(ref self: TContractState, id: felt252, receiver: ContractAddress);
     fn lock(ref self: TContractState, id: felt252);
     fn unlock(ref self: TContractState, id: felt252);
+    fn set_settings(ref self: TContractState, settings: Settings);
 
-    fn get_request(ref self: TContractState, id: felt252) -> RequestWithCalldata;
+    fn get_request(self: @TContractState, id: felt252) -> RequestWithCalldata;
     fn get_settings(self: @TContractState) -> Settings;
 
     // todo set settings

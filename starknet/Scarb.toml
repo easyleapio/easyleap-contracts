@@ -17,3 +17,6 @@ snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry", tag = "v
 [scripts]
 test = "snforge test"
 buildr = "scarb --profile release build"
+
+[[target.starknet-contract]]
+casm = true

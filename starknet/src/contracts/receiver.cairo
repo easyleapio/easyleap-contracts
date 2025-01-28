@@ -90,8 +90,7 @@ mod Receiver {
         ref self: ContractState, _admin: ContractAddress, settings: Settings
     ) {
         self.common.initializer(_admin);
-        self.l1_easyleap_manager.write(settings.l1_easyleap_manager);
-        self.executor.write(settings.executor);
+        self._set_settings(settings);
     }
 
     #[abi(embed_v0)]
@@ -140,10 +139,16 @@ mod Receiver {
 
             // update request status as success
             request.status = Status::Successful;
+            self.requests.write(id, request);
             self.emit(request);
         }
 
-        fn get_request(ref self: ContractState, id: felt252) -> RequestWithCalldata {
+        fn set_settings(ref self: ContractState, settings: Settings) {
+            self.common.assert_only_owner();
+            self._set_settings(settings);
+        }
+
+        fn get_request(self: @ContractState, id: felt252) -> RequestWithCalldata {
             RequestWithCalldata {
                 request: self.requests.read(id),
                 calldata: self.requests_calldata_map.read(id).array().unwrap(),
@@ -161,12 +166,11 @@ mod Receiver {
 
 
     #[l1_handler]
-    fn on_receive(ref self: ContractState, from_address: felt252, payload: Payload) {
-        self._on_receive(from_address, payload);
-    }
-
-    #[l1_handler]
-    fn on_receive_with_execute(ref self: ContractState, from_address: felt252, payload: Payload) {
+    fn on_receive(
+        ref self: ContractState, 
+        from_address: felt252, 
+        payload: Payload
+    ) {
         let request = self._on_receive(from_address, payload);
 
         // try to execute the request
@@ -181,14 +185,24 @@ mod Receiver {
             },
             Result::Err(_revert_reason) => {
                 // sad, may be user will request refund
+                // todo test is still failing
                 self.emit(ExecuteFailed { id: request.request_info.id });
             },
         };
+    }
 
+    #[l1_handler]
+    fn on_receive_without_execute(ref self: ContractState, from_address: felt252, payload: Payload) {
+        self._on_receive(from_address, payload);
     }
 
     #[generate_trait]
     pub impl InternalImpl of InternalTrait {
+        fn _set_settings(ref self: ContractState, settings: Settings) {
+            self.l1_easyleap_manager.write(settings.l1_easyleap_manager);
+            self.executor.write(settings.executor);
+        }
+
         fn _on_receive(ref self: ContractState, from_address: felt252, payload: Payload) -> Request {
             assert(
                 self.l1_easyleap_manager.read() == from_address,
@@ -203,11 +217,16 @@ mod Receiver {
             assert(existing_request.request_info.id == 0, Errors::REQUEST_EXISTS);
     
             // save request
+            let calldata_span = payload.calldata.span();
             self.requests.write(request.request_info.id, request);
-    
+            self.emit(RequestWithCalldata {
+                request: request,
+                calldata: payload.calldata,
+            });
+
             // save calldata
             let mut request_calldata = self.requests_calldata_map.read(request.request_info.id);
-            request_calldata.append_span(payload.calldata.span()).unwrap();
+            request_calldata.append_span(calldata_span).unwrap();
     
             return request;
         }

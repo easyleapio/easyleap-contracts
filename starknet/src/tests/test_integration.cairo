@@ -135,7 +135,53 @@ pub mod test_integration {
         let mut flat_calldata: Array<felt252> = array![];
         payload.serialize(ref flat_calldata);
 
-        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive_with_execute"));
+        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
+        l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
+
+        let dappBalance = mockToken.balance_of(mockDapp.contract_address);
+        assert(dappBalance == amount.into(), 'dapp balance incorrect');
+    }
+
+    // todo re-execution should fail
+    #[test]
+    fn test_invalid_calldata_message_fee_zero() {
+        let (_executor, receiver, mockToken, mockDapp) = full_setup();
+
+        // send funds to receiver
+        let amount: felt252 = 100 * 1000000000000000000;
+        mockToken.transfer(receiver.contract_address, amount.into());
+
+        // approve and deposit
+        let mut calldata: Array<felt252> = array![
+            2, // 2 calls
+            // call 1: approve
+            mockToken.contract_address.into(), // token address
+            selector!("approve"),
+            3, // approve callata len
+            mockDapp.contract_address.into(), // spender
+            amount, // amount u256 low
+            0, // amount u256 high
+            // call2: deposit
+            mockDapp.contract_address.into(), // dAPp address
+            selector!("deposit"),
+            2, // deposit calldata len
+            amount + 1, // amount
+            0 // padding
+        ];
+
+        let payload = Payload {
+            request_info: CommonRequest {
+                id: 1,
+                token: mockToken.contract_address,
+                amount: amount,
+                l2_owner: get_contract_address()
+            },
+            calldata: calldata
+        };
+        let mut flat_calldata: Array<felt252> = array![];
+        payload.serialize(ref flat_calldata);
+
+        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
         l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
 
         let dappBalance = mockToken.balance_of(mockDapp.contract_address);
@@ -175,7 +221,7 @@ pub mod test_integration {
         let mut flat_calldata: Array<felt252> = array![];
         payload.serialize(ref flat_calldata);
 
-        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
+        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive_without_execute"));
         l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
         println!("Executed l1 handler");
         executor.execute(1);
@@ -212,7 +258,7 @@ pub mod test_integration {
         let mut flat_calldata: Array<felt252> = array![];
         payload.serialize(ref flat_calldata);
 
-        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
+        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive_without_execute"));
         l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
         println!("Executed l1 handler");
         executor.execute(1);
@@ -262,7 +308,7 @@ pub mod test_integration {
         let mut flat_calldata: Array<felt252> = array![];
         payload.serialize(ref flat_calldata);
 
-        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive"));
+        let l1Handler = L1HandlerTrait::new(receiver.contract_address, selector!("on_receive_without_execute"));
         l1Handler.execute(l1_easyleap_manager(), flat_calldata.span()).unwrap();
         println!("Executed l1 handler");
         executor.execute(1);

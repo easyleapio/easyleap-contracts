@@ -85,14 +85,14 @@ mod Executor {
     #[abi(embed_v0)]
     impl StarkPullImpl of IExecutor<ContractState> {
         fn execute(ref self: ContractState, id: felt252) {
-            println!("Executing request {}", id);
+            /// println!("Executing request {}", id);
             self.renack.start();
 
             // assert request is in pending state
             let receiverDisp = self.l1Receiver.read();
             let mut request = receiverDisp.get_request(id);
             assert(request.request.status == Status::Pending, Errors::NOT_PENDING);
-            println!("Executing request {}", id);
+            /// println!("Executing request {}", id);
 
             // lock and receive funds
             // ensures the calldata cannot execute arbitrary code to use other funds
@@ -104,13 +104,13 @@ mod Executor {
             if (fee_amount > 0) {
                 tokenDisp.transfer(self.fee_receiver.read(), fee_amount.into());
             }
-            println!("Fee amount {}", fee_amount);
+            /// println!("Fee amount {}", fee_amount);
 
             // conver raw calldata to calls
             let mut calldata_span = request.calldata.span();
             let calls: Array<Call> = Serde::<Array<Call>>::deserialize(ref calldata_span).unwrap();
             let len = calls.len();
-            println!("Executing {} calls", len);
+            /// println!("Executing {} calls", len);
 
             // Implementation from Argent account code
             // https://github.com/argentlabs/argent-contracts-starknet/blob/1352198956f36fb35fa544c4e46a3507a3ec20e3/src/utils/calls.cairo#L4
@@ -121,12 +121,12 @@ mod Executor {
                     break;
                 }
                 let call = calls[index];
-                println!("Executing call {}", index);
+                /// println!("Executing call {}", index);
                 let retdata = call_contract_syscall(*call.to, *call.selector, *call.calldata).unwrap();
                 result.append(retdata);
                 index += 1;
             };
-            println!("execution done");
+            /// println!("execution done");
 
             // assert no balance left
             let currentBalance: u256 = tokenDisp.balance_of(get_contract_address());
@@ -137,7 +137,7 @@ mod Executor {
                 id: id,
                 retdata: result,
             });
-            println!("balance check failed");
+            /// println!("balance check failed");
             
             // unlocks the receive making the transaction done
             // This ensures the lock is closed on the receiver
