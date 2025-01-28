@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "../dependencies/forge-std/src/Test.sol";
-import {L1Manager, IStarkgateTokenBridge} from "../src/L1_Manager.sol";
+import {L1Manager, IStarkgateTokenBridge} from "../src/L1Manager.sol";
 import "../src/interfaces/IERC20.sol";
   
 contract L1ManagerTest is Test {
@@ -76,5 +76,26 @@ contract L1ManagerTest is Test {
       // approve and push
       IERC20(STRKAddr).approve(address(l1Manager), amount);
       l1Manager.push{value: amountToSend}(config, amount, _calldata);
+    }
+
+    function test_update_settings() public {
+      L1Manager.Settings memory settings = L1Manager.Settings({
+        fee_eth: 0.001 ether,
+        fee_receiver: fee_receiver,
+        l2_easyleap_receiver: 0
+      });
+      l1Manager.set_settings(settings);
+    }
+
+    function test_update_settings_should_fail() public {
+      vm.startPrank(starknetCore); // use some random addr
+      L1Manager.Settings memory settings = L1Manager.Settings({
+        fee_eth: 0.001 ether,
+        fee_receiver: fee_receiver,
+        l2_easyleap_receiver: 0
+      });
+      vm.expectRevert("AccessControl: account 0xc662c410c0ecf747543f5ba90660f6abebd9c8c4 is missing role 0x0000000000000000000000000000000000000000000000000000000000000000");
+      l1Manager.set_settings(settings);
+      vm.stopPrank();
     }
 }

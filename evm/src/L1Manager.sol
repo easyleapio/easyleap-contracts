@@ -3,7 +3,9 @@
 pragma solidity ^0.8.28;
 
 import "./interfaces/IERC20.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 interface IStarkgateTokenBridge {
     function deposit(
@@ -26,9 +28,7 @@ interface IStarknetCore {
 /**
    @title Test contract to receive / send messages to starknet.
 */
-contract L1Manager is AccessControlUpgradeable {
-    // // todo: Should be Ownable, Pausable, ReentrancyGuard
-
+contract L1Manager is Initializable, OwnableUpgradeable {
     struct Request {
      address token;
      uint256 amount;
@@ -47,20 +47,22 @@ contract L1Manager is AccessControlUpgradeable {
         address bridge_address;
     }
     
-    // address public mock;
-    // bytes32 constant MANAGER_ADMIN = keccak256("MANAGER_ADMIN");
+    // avoids storage collisions
+    bytes32 constant STORAGE_SLOT = keccak256("MY_STORAGE_SLOT");
 
-    address admin;
-    uint256 current_request_id;
-    Settings settings;
-
+    // to keep it upgradeable
+    struct MyStorage {
+        address admin;
+        uint256 current_request_id;
+        Settings settings;
+        IStarknetCore starknetCore;
+        mapping(uint256 => Request) idToRequest;
+    }
+    
     uint256 constant L2_SELECTOR = 0x01101afb9568fc98d91b25365fb0f498486ed49680b8d2625a0b45a850311d1e; // on_receive;
-    IStarknetCore starknetCore;
-
-    // 3. requests: mapping (id => Request)
-     mapping(uint256 => Request) public idToRequest;
 
     // events list
+    // todo emit l2 reciever addr too
     event InitMigration(uint256 id, address indexed token, uint256 amount, address  indexed sender);
     event Refund(uint256 id, address indexed token, uint256 amount, address  indexed sender);
     event EthReceived(uint256 amount, address);
@@ -92,9 +94,7 @@ contract L1Manager is AccessControlUpgradeable {
         settings = _settings;
         
         zeroAddressCheck(_admin);
-        _setAdmin(_admin);
-        __AccessControl_init();
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        __Ownable_init(_admin);
     }
 
     function _setAdmin(address _admin) internal {
@@ -107,7 +107,7 @@ contract L1Manager is AccessControlUpgradeable {
         return admin;
     }
 
-    function updateAdmin(address _admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateAdmin(address _admin) external onlyOwner {
         zeroAddressCheck(_admin);
         address oldAdmin = getAdmin();
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
