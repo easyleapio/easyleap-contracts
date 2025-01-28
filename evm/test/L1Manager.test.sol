@@ -3,7 +3,10 @@ pragma solidity ^0.8.13;
 
 import {Test, console} from "../dependencies/forge-std/src/Test.sol";
 import {L1Manager, IStarkgateTokenBridge} from "../src/L1Manager.sol";
+import {MyProxy} from "../src/Proxy.sol";
 import "../src/interfaces/IERC20.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
   
 contract L1ManagerTest is Test {
     L1Manager public l1Manager;
@@ -94,8 +97,90 @@ contract L1ManagerTest is Test {
         fee_receiver: fee_receiver,
         l2_easyleap_receiver: 0
       });
-      vm.expectRevert("AccessControl: account 0xc662c410c0ecf747543f5ba90660f6abebd9c8c4 is missing role 0x0000000000000000000000000000000000000000000000000000000000000000");
+      vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, starknetCore));
       l1Manager.set_settings(settings);
       vm.stopPrank();
+    }
+
+    function test_proxy_fail_reinit() public {
+      address implementation = address(new L1Manager(
+        address(starknetCore),
+        address(this),
+        L1Manager.Settings({
+          fee_eth: 0.001 ether,
+          fee_receiver: fee_receiver,
+          l2_easyleap_receiver: 0
+        })
+      ));
+      bytes memory data = abi.encodeWithSelector(L1Manager.initialize.selector, starknetCore, address(this), L1Manager.Settings({
+        fee_eth: 0.001 ether,
+        fee_receiver: fee_receiver,
+        l2_easyleap_receiver: 0
+      }));
+      MyProxy proxy = new MyProxy(implementation, data);
+
+      L1Manager l1ManagerProxy = L1Manager(payable(address(proxy)));
+      vm.expectRevert(Initializable.InvalidInitialization.selector);
+      l1ManagerProxy.initialize(starknetCore, address(this), L1Manager.Settings({
+        fee_eth: 0.001 ether,
+        fee_receiver: fee_receiver,
+        l2_easyleap_receiver: 0
+      }));
+    }
+
+    function test_proxy_upgrade() public {
+      address implementation = address(new L1Manager(
+        address(starknetCore),
+        address(this),
+        L1Manager.Settings({
+          fee_eth: 0.001 ether,
+          fee_receiver: fee_receiver,
+          l2_easyleap_receiver: 0
+        })
+      ));
+      bytes memory data = abi.encodeWithSelector(L1Manager.initialize.selector, starknetCore, address(this), L1Manager.Settings({
+        fee_eth: 0.001 ether,
+        fee_receiver: fee_receiver,
+        l2_easyleap_receiver: 0
+      }));
+      MyProxy proxy = new MyProxy(implementation, data);
+
+      L1Manager l1ManagerProxy = L1Manager(payable(address(proxy)));
+
+      // assert owner
+      require(l1ManagerProxy.owner() == address(this), "owner should be this");
+
+      // assert correct implementation
+      address current_impl = l1ManagerProxy.getImplementation();
+      require(current_impl == implementation, "implementation should be the same");
+
+      // upgrade to same thing again
+      l1ManagerProxy.upgradeToAndCall(implementation, "");
+    }
+
+    function test_proxy_upgrade_fail_incorrect_admin() public {
+      address implementation = address(new L1Manager(
+        address(starknetCore),
+        address(this),
+        L1Manager.Settings({
+          fee_eth: 0.001 ether,
+          fee_receiver: fee_receiver,
+          l2_easyleap_receiver: 0
+        })
+      ));
+      bytes memory data = abi.encodeWithSelector(L1Manager.initialize.selector, starknetCore, address(this), L1Manager.Settings({
+        fee_eth: 0.001 ether,
+        fee_receiver: fee_receiver,
+        l2_easyleap_receiver: 0
+      }));
+      MyProxy proxy = new MyProxy(implementation, data);
+
+      L1Manager l1ManagerProxy = L1Manager(payable(address(proxy)));
+
+      // should fail because the attacker is not the admin
+      address attacker = address(1);
+      vm.startPrank(attacker);
+      vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, attacker));
+      l1ManagerProxy.upgradeToAndCall(implementation, "");
     }
 }
