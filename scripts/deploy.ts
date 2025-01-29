@@ -22,7 +22,7 @@ function getL1Manager() {
   if (process.env.NETWORK === "mainnet") {
     throw new Error("Not implemented");
   }
-  return '0x54636479410d630F72da478Ed85371dDcaE7666a';
+  return '0x0f234D3fD7f1C525fA03afbF0e8c8DE8c1fF79A3';
 }
 
 function getStarknetCore() {
@@ -48,28 +48,30 @@ async function deployEVM() {
 async function deploySN() {
   // deploy to StarkNet
   // const { class_hash } = await myDeclare("Executor");
-  // const executor = await deployContract("Executor", class_hash, {
-  //   _admin: getAccount(ACCOUNT_NAME_SN).address,
-  //   settings: {
-  //     fee_bps: 5,
-  //     fee_receiver: getAccount(ACCOUNT_NAME_SN).address,
-  //     l1Receiver: 0
-  //   }
-  // });
+  const class_hash = '0x01a9fdc7b62447b952fc5807f39acb3e595dc52727464670a94334f8384cc1b7'
+  const { class_hash: receiver_class_hash } = await myDeclare("Receiver");
+  
+  const executor = await deployContract("Executor", class_hash, {
+    _admin: getAccount(ACCOUNT_NAME_SN).address,
+    settings: {
+      fee_bps: 5,
+      fee_receiver: getAccount(ACCOUNT_NAME_SN).address,
+      l1Receiver: 0
+    }
+  });
 
-  // // deploy receiver
-  // const { class_hash: receiver_class_hash } = await myDeclare("Receiver");
-  // const receiver = await deployContract("Receiver", receiver_class_hash, {
-  //   _admin: getAccount(ACCOUNT_NAME_SN).address,
-  //   settings: {
-  //     l1_easyleap_manager: num.getDecimalString(getL1Manager()),
-  //     executor: executor.address
-  //   }
-  // });
+  // deploy receiver
+  const receiver = await deployContract("Receiver", receiver_class_hash, {
+    _admin: getAccount(ACCOUNT_NAME_SN).address,
+    settings: {
+      l1_easyleap_manager: num.getDecimalString(getL1Manager()),
+      executor: executor.address
+    }
+  });
 
   // update settings of executor
-  const executor = {address: '0x1bd99991c7923b3853c19c55f7562bbac369be8d72d03e49bba9f9d4e5420c2'};
-  const receiver = {address: '0x7ff7ab2241b087f35ca116cc1a3ce218e36234a1a0a1937250c73eeca20b389'};
+  // const executor = {address: '0x4eeb50039f196a8447e2e19010985a90eaef7ab8543618c8da691927946acd'};
+  // const receiver = {address: '0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6'};
   let executorCls = await getRpcProvider().getClassAt(executor.address);
   const executorContract = new Contract(executorCls.abi, executor.address, getRpcProvider());
   const call = executorContract.populate('set_settings', {
@@ -106,10 +108,29 @@ async function setRecieverSettings() {
   console.log(`Receiver settings updated: ${tx.transaction_hash}`);
 }
 
+async function setSettingsEVM() {
+  // call set_settings on l1 manager
+  const wallet = new ethers.Wallet(getEVMAccount(ACCOUNT_NAME_EVM).private_key, getEVMProvider());
+  const l1ManagerAbi = (await getEVMArtifact("L1Manager")).abi;
+  const l1ManagerContract = new ethers.Contract(getConfig().evm.l1Manager, l1ManagerAbi, wallet);
+  l1ManagerContract.connect(getEVMAccount(ACCOUNT_NAME_EVM));
+
+  const tx = await l1ManagerContract.set_settings(
+    {
+      fee_eth: getEVMFee(),
+      fee_receiver: getFeeReceiver(),
+      l2_easyleap_receiver: num.getDecimalString(getConfig().starknet.receiver)
+    }
+  );
+  console.log("Transaction sent!");
+  console.log(`Transaction hash: ${tx.hash}`);
+  await tx.wait();
+  console.log("Transaction confirmed!");
+}
 
 async function upgradeSN() {
   // ! set contract address
-  const address = "0x7ff7ab2241b087f35ca116cc1a3ce218e36234a1a0a1937250c73eeca20b389";
+  const address = "0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6";
   const acc = getAccount(ACCOUNT_NAME_SN);
   // const { class_hash } = await myDeclare("Receiver");
   const class_hash = '0x050105a5b191672cc45c3e738fe3f4b7ca9e9f8cefc5e925bf389bde976fe800'
@@ -233,11 +254,11 @@ async function mockPush() {
 function getConfig() {
   return {
     evm: {
-      l1Manager: '0x54636479410d630F72da478Ed85371dDcaE7666a'
+      l1Manager: '0x0f234D3fD7f1C525fA03afbF0e8c8DE8c1fF79A3'
     },
     starknet: {
-      executor: '0x1bd99991c7923b3853c19c55f7562bbac369be8d72d03e49bba9f9d4e5420c2',
-      receiver: '0x7ff7ab2241b087f35ca116cc1a3ce218e36234a1a0a1937250c73eeca20b389'
+      executor: '0x4eeb50039f196a8447e2e19010985a90eaef7ab8543618c8da691927946acd',
+      receiver: '0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6'
     }
   }
 }
@@ -245,12 +266,12 @@ function getConfig() {
 if (require.main === module) {
   // deployEVM()
   // deploySN()
-  upgradeSN().then(() => {
+  // upgradeSN().then(() => {
     // mockPush()
     // setRecieverSettings();
-  })
-  // mockPush()
-
+  // })
+  mockPush()
+  // setSettingsEVM()
 }
 
 /**
@@ -259,11 +280,11 @@ if (require.main === module) {
  * ***
  * 
  * EVM: 
- * L1 Manager: 0x54636479410d630F72da478Ed85371dDcaE7666a
+ * L1 Manager: 0x0f234D3fD7f1C525fA03afbF0e8c8DE8c1fF79A3
  * 
  * Starknet:
- * Executor: 0x1bd99991c7923b3853c19c55f7562bbac369be8d72d03e49bba9f9d4e5420c2
- * Receiver: 0x7ff7ab2241b087f35ca116cc1a3ce218e36234a1a0a1937250c73eeca20b389
+ * Executor: 0x4eeb50039f196a8447e2e19010985a90eaef7ab8543618c8da691927946acd
+ * Receiver: 0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6
 */
 
 

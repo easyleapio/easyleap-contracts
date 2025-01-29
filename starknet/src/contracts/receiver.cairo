@@ -37,6 +37,7 @@ mod Receiver {
 
     #[derive(Drop, Serde, starknet::Event)]
     pub struct ExecuteFailed {
+        #[key]
         pub id: felt252,
     }
 
