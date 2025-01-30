@@ -10,15 +10,12 @@ pub enum Status {
 
 #[derive(Drop, Serde, Copy, starknet::Store, starknet::Event)]
 pub struct CommonRequest {
-    #[key]
     pub id: felt252,
     // payload[1] = correspondingToken[token]; // starknet token address
-    #[key]
     pub token: ContractAddress,
     // payload[2] = amount; // amount
     pub amount: felt252,
     // payload[4] = reciever; // reciever
-    #[key]
     pub l2_owner: ContractAddress,
 }
 

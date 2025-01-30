@@ -49,7 +49,8 @@ async function deploySN() {
   // deploy to StarkNet
   // const { class_hash } = await myDeclare("Executor");
   const class_hash = '0x01a9fdc7b62447b952fc5807f39acb3e595dc52727464670a94334f8384cc1b7'
-  const { class_hash: receiver_class_hash } = await myDeclare("Receiver");
+  const receiver_class_hash = '0x050b809446395424cffee32cb17a9c1aed9cff34007e2a32883488e2ea75c6cd'
+  // const { class_hash: receiver_class_hash } = await myDeclare("Receiver");
   
   const executor = await deployContract("Executor", class_hash, {
     _admin: getAccount(ACCOUNT_NAME_SN).address,
@@ -70,8 +71,8 @@ async function deploySN() {
   });
 
   // update settings of executor
-  // const executor = {address: '0x4eeb50039f196a8447e2e19010985a90eaef7ab8543618c8da691927946acd'};
-  // const receiver = {address: '0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6'};
+  // const executor = {address: '0x25eeb95b5b75cb383da475eb15ecaa7a7df82df3df11039309a106264d0be66'};
+  // const receiver = {address: '0x1989d862bd8b045010bc9d61eccf85a164df6fb9c26cc34e2ecee93419f2e3d'};
   let executorCls = await getRpcProvider().getClassAt(executor.address);
   const executorContract = new Contract(executorCls.abi, executor.address, getRpcProvider());
   const call = executorContract.populate('set_settings', {
@@ -130,7 +131,7 @@ async function setSettingsEVM() {
 
 async function upgradeSN() {
   // ! set contract address
-  const address = "0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6";
+  const address = "0x1989d862bd8b045010bc9d61eccf85a164df6fb9c26cc34e2ecee93419f2e3d";
   const acc = getAccount(ACCOUNT_NAME_SN);
   // const { class_hash } = await myDeclare("Receiver");
   const class_hash = '0x050105a5b191672cc45c3e738fe3f4b7ca9e9f8cefc5e925bf389bde976fe800'
@@ -257,8 +258,8 @@ function getConfig() {
       l1Manager: '0x0f234D3fD7f1C525fA03afbF0e8c8DE8c1fF79A3'
     },
     starknet: {
-      executor: '0x4eeb50039f196a8447e2e19010985a90eaef7ab8543618c8da691927946acd',
-      receiver: '0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6'
+      executor: '0x25eeb95b5b75cb383da475eb15ecaa7a7df82df3df11039309a106264d0be66',
+      receiver: '0x1989d862bd8b045010bc9d61eccf85a164df6fb9c26cc34e2ecee93419f2e3d'
     }
   }
 }
@@ -267,8 +268,8 @@ if (require.main === module) {
   // deployEVM()
   // deploySN()
   // upgradeSN().then(() => {
-    // mockPush()
-    // setRecieverSettings();
+  //   // mockPush()
+  //   // setRecieverSettings();
   // })
   mockPush()
   // setSettingsEVM()
@@ -283,8 +284,8 @@ if (require.main === module) {
  * L1 Manager: 0x0f234D3fD7f1C525fA03afbF0e8c8DE8c1fF79A3
  * 
  * Starknet:
- * Executor: 0x4eeb50039f196a8447e2e19010985a90eaef7ab8543618c8da691927946acd
- * Receiver: 0xbe381a938f21b9597847ac9286065907bb9210cdfd064e1f875a92db1e75b6
+ * Executor: 0x25eeb95b5b75cb383da475eb15ecaa7a7df82df3df11039309a106264d0be66
+ * Receiver: 0x1989d862bd8b045010bc9d61eccf85a164df6fb9c26cc34e2ecee93419f2e3d
 */
 
 
